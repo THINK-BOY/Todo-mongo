@@ -1,80 +1,113 @@
-const express = require('express');
-const {authmiddleware} = require('./middleware');
-const app = express();
-const jwt=require('jsonwebtoken')
+const express = require("express");
+const { authMiddleware } = require("./middleware");
+const jwt = require("jsonwebtoken");
+const { todoModel, userModel } = require("./model");
 
+const app = express()
 app.use(express.json());
 
-const USERS=[]
-const NOTES=[]
-const port = 3000;  
 
-app.post('/signup', (req, res) => {
-  const username=req.body.username;
-  const password=req.body.password;
+app.post("/signup", async (req, res) => {
+    const username = req.body.username;
+    const password = req.body.password;
 
-  if(!username || !password){
-    res.status(400).json({message: "username and password required"})
-    return
-  }
-  const userExsist=USERS.find(user=>user.username===username);
-  if(userExsist){
-    res.status(401).json({
-        message: "user already exists"
+    const existingUser = await userModel.findOne({
+        username: username,
+        password: password
+    });
+    if (existingUser) {
+        res.status(403).json({
+            message: "User with this username already exists"
+        })
+        return 
+    }
+   
+    const newUser = await userModel.create({
+        username: username,
+        password: password
     })
-    return
-  }
-  USERS.push({username,password})
-  res.json({message: 'user created'});
-
-});
-app.post('/signin', (req, res) => {
-    const username=req.body.username;
-    const password=req.body.password;
-
-  if(!username || !password){
-    res.status(400).json({message: "username and password required"})
-    return
-  }
-  const userExsist=USERS.find(user=>user.username===username);
-  if(!userExsist){
-    res.status(401).json({
-        message: "user not found"
+    res.status(201).json({
+      message: "User created successfully",
+      id: newUser._id
     })
-    return
-  }
-  if(userExsist.password !== password){
-    res.status(401).json({
-        message: "invalid password"
-    })
-    return
-  }
-  const token=jwt.sign({username:userExsist.username},"pass123")
-  res.json({token: token});
-});
-app.post('/notes', authmiddleware, (req, res) => {
-  const username=req.username;
-  const title=req.body.title;
-  const description=req.body.description;
+})
 
-  if(!title || !description){
-    res.status(400).json({message: "title and description required"})
-    return
-  }
-  NOTES.push({
-    title:title,
-    description:description,
-    username:username
-  })
-  res.status(200).json({
-    message: "new note added"
-  })
-});
-app.get('/notes', authmiddleware, (req, res) => {
-  const username=req.username;
-  const userNote=NOTES.filter(note=>note.username===username)
-  res.status(200).json(userNote);
-});
-app.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
-});
+
+app.post("/signin", async (req, res) => {
+    const username = req.body.username;
+    const password = req.body.password;
+
+    const userExists = await userModel.findOne({
+        username: username,
+        password: password
+    });
+    if (!userExists) {
+        res.status(403).json({
+            message: "Incorrect credentials"
+        })
+    }
+
+    const token = jwt.sign({
+        userId: userExists.id
+    }, "secret123123");
+
+    res.status(200).json({
+      message: "User signed in successfully",
+        token
+    })
+})
+
+//TODO: Finish all the endpoints from here, migrate them from in memory to mongodb
+app.post("/todo", authMiddleware, async (req, res) => {
+    const userId = req.userId;
+    const title = req.body.title;
+    const description = req.body.description;
+
+    const newTodo = await todoModel.create({
+        title: title,
+        description: description,
+        userId: userId
+    })
+    res.status(201).json({
+        message: "New todo made successfully",
+        todoId: newTodo._id
+    })
+})
+
+// harkirats id might send a request to delete mark zuckerbergs todo id.
+app.delete("/todo/:todoId", authMiddleware, async (req, res) => {
+    const userId = req.userId;
+    const todoId = req.params.todoId; /// MongoDB ObjectId
+
+    const doesUserOwnTodo = await todoModel.findOne({
+        _id: todoId,
+        userId: userId
+    });
+
+    if (doesUserOwnTodo) {
+        await todoModel.deleteOne({
+            _id: todoId,
+            userId: userId
+        });
+        res.status(200).json({
+            message: "Deleted"
+        })
+    } else {
+        res.status(411).json({
+            message: "Either todo doesnt exist or this is not your todo"
+        })
+    }
+})
+
+app.get("/todos", authMiddleware, async (req, res) => {
+    const userId = req.userId;
+    const userTodos = await todoModel.find({
+        userId: userId
+    });
+    res.status(200).json({
+        todos: userTodos
+    })
+})
+
+app.listen(3000);
+console.log("Server started at port 3000")

@@ -1,29 +1,35 @@
-const jwt=require('jsonwebtoken')
+const jwt = require("jsonwebtoken");
+const mongoose = require("mongoose");
 
-function authmiddleware(req,res,next){
-    const token=req.headers.token;
-
-    if(!token){
-        res.status(401).json({
-            message: "token not provided"
-        })
-        return
+function authMiddleware(req, res, next) {
+    const token = req.headers.token;
+    
+    if (!token) {
+        return res.status(403).json({
+            message: "No token provided"
+        });
     }
-
-    try{
-        const decode=jwt.verify(token,"pass123")
-        const username=decode.username;
-        req.username=username;
-        next();
-    }catch(err){
-        res.status(401).json({
-            message: "invalid token"
-        })
+    
+    try {
+        const decoded = jwt.verify(token, "secret123123");
+        
+        if (decoded.userId) {
+            req.userId = new mongoose.Types.ObjectId(decoded.userId);
+            next()
+        } else {
+            res.status(403).json({
+                message: "Token invalid or not found"
+            })
+        }
+    } catch (error) {
+        return res.status(403).json({
+            message: "Invalid token",
+            error: error.message
+        });
     }
-
 
 }
 
-module.exports={
-    authmiddleware: authmiddleware
-};
+module.exports = {
+    authMiddleware: authMiddleware
+}
